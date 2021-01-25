@@ -54,8 +54,12 @@ import {
   allowedStatusCodes,
   getRedirectStatus,
   Redirect,
+  Rewrite,
 } from '../../lib/load-custom-routes'
 import { DomainLocales } from './config'
+import pathMatch from '../lib/router/utils/path-match'
+
+const getCustomRouteMatcher = pathMatch(true)
 
 function noRouter() {
   const message =
@@ -183,6 +187,7 @@ export type RenderOptsPartial = {
   locales?: string[]
   defaultLocale?: string
   domainLocales?: DomainLocales
+  rewrites?: Rewrite[]
 }
 
 export type RenderOpts = LoadComponentsReturnType & RenderOptsPartial
@@ -374,6 +379,7 @@ export async function renderToHTML(
 
   // don't modify original query object
   query = Object.assign({}, query)
+  console.log('req.url', req.url)
 
   const {
     err,
@@ -395,6 +401,9 @@ export async function renderToHTML(
     previewProps,
     basePath,
     devOnlyCacheBusterQueryString,
+    resolvedUrl,
+    rewrites,
+    locale,
   } = renderOpts
 
   const getFontDefinition = (url: string): string => {
@@ -485,6 +494,19 @@ export async function renderToHTML(
     )
   }
 
+  const isRewirteRoute = rewrites
+    ? rewrites.some((rewrite) => {
+        const matcher = getCustomRouteMatcher(rewrite.source)
+        const match = matcher(
+          `${basePath || ''}${locale ? `/${locale}` : ''}${req.url}`
+        )
+        // console.log('match: ', !!match, rewrite.source)
+        return !!match
+      })
+    : false
+
+  console.log('isRewirteRoute', isRewirteRoute)
+
   if (dev) {
     const { isValidElementType } = require('react-is')
     if (!isValidElementType(Component)) {
@@ -505,6 +527,14 @@ export async function renderToHTML(
       )
     }
 
+    console.log('pageIsDynamic', pageIsDynamic)
+    console.log('isAutoExport', isAutoExport)
+    console.log('isFallback', isFallback)
+    console.log('\n')
+    console.log('pathname', pathname)
+    console.log('resolvedUrl', resolvedUrl)
+    console.log('resolvedAsPath', renderOpts.resolvedAsPath)
+
     if (isAutoExport || isFallback) {
       // remove query values except ones that will be set during export
       query = {
@@ -518,9 +548,13 @@ export async function renderToHTML(
         // ensure trailing slash is present for non-dynamic auto-export pages
         req.url!.endsWith('/') && pathname !== '/' && !pageIsDynamic ? '/' : ''
       }`
-      req.url = pathname
+      if (!isRewirteRoute) {
+        req.url = pathname
+      }
+
       renderOpts.nextExport = true
     }
+    console.log('renderOpts.resolvedAsPath', renderOpts.resolvedAsPath)
 
     if (pathname === '/404' && (hasPageGetInitialProps || getServerSideProps)) {
       throw new Error(PAGES_404_GET_INITIAL_PROPS_ERROR)
@@ -532,7 +566,14 @@ export async function renderToHTML(
   await Loadable.preloadAll() // Make sure all dynamic imports are loaded
 
   // url will always be set
-  const asPath: string = renderOpts.resolvedAsPath || (req.url as string)
+
+  const resolvedAsPath: string =
+    renderOpts.resolvedAsPath || (req.url as string)
+  const asPath: string =
+    isAutoExport && pageIsDynamic ? resolvedAsPath : (req.url as string)
+  console.log('asPath', asPath)
+  console.log('resolvedAsPath', resolvedAsPath)
+  console.log('\n', '-'.repeat(100))
   const routerIsReady = !!(getServerSideProps || hasPageGetInitialProps)
   const router = new ServerRouter(
     pathname,
@@ -554,7 +595,7 @@ export async function renderToHTML(
     res: isAutoExport ? undefined : res,
     pathname,
     query,
-    asPath,
+    asPath: resolvedAsPath,
     AppTree: (props: any) => {
       return (
         <AppContainer>

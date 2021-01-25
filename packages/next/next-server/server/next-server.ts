@@ -1373,7 +1373,7 @@ export default class Server {
       ? this.nextConfig.i18n?.defaultLocale
       : (query.__nextDefaultLocale as string)
 
-    const { i18n } = this.nextConfig
+    const { i18n, basePath } = this.nextConfig
     const locales = i18n?.locales
 
     let previewData: string | false | object | undefined
@@ -1383,6 +1383,8 @@ export default class Server {
       previewData = tryGetPreviewData(req, res, this.renderOpts.previewProps)
       isPreviewMode = previewData !== false
     }
+
+    // console.log('req.url ', req.url )
 
     // Compute the iSSG cache key. We use the rewroteUrl since
     // pages with fallback: false are allowed to be rewritten to
@@ -1421,7 +1423,7 @@ export default class Server {
         basePath: pageData.pageProps.__N_REDIRECT_BASE_PATH,
       }
       const statusCode = getRedirectStatus(redirect)
-      const { basePath } = this.nextConfig
+      // const { basePath } = this.nextConfig
 
       if (basePath && redirect.basePath !== false) {
         redirect.destination = `${basePath}${redirect.destination}`
@@ -1576,6 +1578,7 @@ export default class Server {
               defaultLocale,
               fontManifest: this.renderOpts.fontManifest,
               domainLocales: this.renderOpts.domainLocales,
+              rewrites: this.customRoutes.rewrites,
             }
           )
 
@@ -1595,6 +1598,28 @@ export default class Server {
             query: origQuery,
           })
 
+          // console.log('pathname', pathname)
+          // console.log('resolvedUrlPathname', resolvedUrlPathname)
+          // console.log('urlPathname', urlPathname)
+          // console.log('resolvedUrl', resolvedUrl)
+          // console.log('rewrites', this.customRoutes.rewrites)
+          // const isRewirteRoute = this.customRoutes.rewrites.some(rewrite => {
+          //   const matcher = getCustomRouteMatcher(rewrite.source)
+          //   const params = matcher(req.url)
+          //   console.log('match: ', !!params, rewrite.source)
+          // })
+
+          // console.log('isRewirteRoute', isRewirteRoute)
+
+          const resolvedAsPath = formatUrl({
+            // we use the original URL pathname less the _next/data prefix if
+            // present
+            pathname: `${basePath || ''}${
+              locale ? `/${locale}` : ''
+            }${urlPathname}${hadTrailingSlash ? '/' : ''}`,
+            query: origQuery,
+          })
+
           const renderOpts: RenderOpts = {
             ...components,
             ...opts,
@@ -1606,14 +1631,8 @@ export default class Server {
             // For getServerSideProps we need to ensure we use the original URL
             // and not the resolved URL to prevent a hydration mismatch on
             // asPath
-            resolvedAsPath: isServerProps
-              ? formatUrl({
-                  // we use the original URL pathname less the _next/data prefix if
-                  // present
-                  pathname: `${urlPathname}${hadTrailingSlash ? '/' : ''}`,
-                  query: origQuery,
-                })
-              : resolvedUrl,
+            resolvedAsPath,
+            rewrites: this.customRoutes.rewrites,
           }
 
           renderResult = await renderToHTML(
